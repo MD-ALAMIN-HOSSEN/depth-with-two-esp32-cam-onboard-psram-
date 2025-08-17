@@ -177,27 +177,44 @@ void printApBottomTopHalf() {
   Serial.println("=================================");
 }
 
-void handleGetDepth() {
-  String json = "{";
-  
-  json += "\"X\":[";
-  for (int i = 0; i < HALF_HEIGHT * IMG_WIDTH; i++) {
-    json += worldXmap[i];
-    if (i < HALF_HEIGHT * IMG_WIDTH - 1) json += ",";
-  }
-  json += "],\"Y\":[";
-  for (int i = 0; i < HALF_HEIGHT * IMG_WIDTH; i++) {
-    json += worldYmap[i];
-    if (i < HALF_HEIGHT * IMG_WIDTH - 1) json += ",";
-  }
-  json += "],\"Z\":[";
-  for (int i = 0; i < HALF_HEIGHT * IMG_WIDTH; i++) {
-    json += String(worldZmap[i], 2);
-    if (i < HALF_HEIGHT * IMG_WIDTH - 1) json += ",";
-  }
-  json += "]}";
+void handleGetXYZclient() {
+    // calculate max size needed
+    size_t bufSize = HALF_HEIGHT * IMG_WIDTH * 12 * 3 + 256; // rough estimate
+    char* jsonBuf = (char*) heap_caps_malloc(bufSize, MALLOC_CAP_SPIRAM);
+    if (!jsonBuf) {
+        server.send(500, "text/plain", "Failed to allocate PSRAM");
+        return;
+    }
+    
+    char* ptr = jsonBuf;
+    ptr += sprintf(ptr, "{");
 
-  server.send(200, "application/json", json);
+    // X array
+    ptr += sprintf(ptr, "\"X\":[");
+    for (int i = 0; i < HALF_HEIGHT * IMG_WIDTH; i++) {
+        ptr += sprintf(ptr, "%d", (int)worldXmap[i]);
+        if (i < HALF_HEIGHT * IMG_WIDTH - 1) ptr += sprintf(ptr, ",");
+    }
+    ptr += sprintf(ptr, "],");
+
+    // Y array
+    ptr += sprintf(ptr, "\"Y\":[");
+    for (int i = 0; i < HALF_HEIGHT * IMG_WIDTH; i++) {
+        ptr += sprintf(ptr, "%d", (int)worldYmap[i]);
+        if (i < HALF_HEIGHT * IMG_WIDTH - 1) ptr += sprintf(ptr, ",");
+    }
+    ptr += sprintf(ptr, "],");
+
+    // Z array
+    ptr += sprintf(ptr, "\"Z\":[");
+    for (int i = 0; i < HALF_HEIGHT * IMG_WIDTH; i++) {
+        ptr += sprintf(ptr, "%.2f", worldZmap[i]);
+        if (i < HALF_HEIGHT * IMG_WIDTH - 1) ptr += sprintf(ptr, ",");
+    }
+    ptr += sprintf(ptr, "]}");
+
+    server.send(200, "application/json", jsonBuf);
+    free(jsonBuf); // free PSRAM
 }
 
 
@@ -246,18 +263,18 @@ float computeDepth(int disparity, float focalLength, float baseline) {
 }
 
 void computeBottomDepth() {
-  float focalLength = 25.0f;  // Adjusted due to 2x downscale
+  float focalLength = 211.0f;  
   float baseline = 10.0f;     // cm
-  float cx = IMG_WIDTH / 2.0f;       // 80 / 2 = 40
-  float cy = HALF_HEIGHT / 2.0f;     // 30 / 2 = 15
+  float cx = IMG_WIDTH / 2.0f;       // 160 / 2 = 80
+  float cy = HALF_HEIGHT / 2.0f;     // 60 / 2 = 30
   int index = 0;
 
-  for (int y = 2; y < HALF_HEIGHT - 2; y++) {       // y = 2 to 27
+  for (int y = 3; y < HALF_HEIGHT - 3; y++) {       // y = 2 to 27
     //calculateRowSums(y);
 
-    for (int x = 2; x < IMG_WIDTH - 2; x++) {        // x = 2 to 77
+    for (int x = 3; x < IMG_WIDTH - 3; x++) {        // x = 2 to 77
       //int disp = findBestHorizontalDisparityBottom(x, y, IMG_WIDTH - x - 2);  // e.g. maxDisparity = 57
-      int disp = findBestHorizontalPixalDisparityTop(x, y, 12, halfBlock); 
+      int disp = findBestHorizontalPixalDisparityTop(x, y, 32, halfBlock); 
       float depth = computeDepth(disp, focalLength, baseline);
 
       if (depth > 255.0f || disp == 0) depth = 255.0f;
@@ -334,7 +351,7 @@ void setup() {
   server.on("/receive_bottom_half", HTTP_POST, handleReceiveApBottomHalf);
   server.on("/send_client_top_half", HTTP_GET, handleSendClientTopHalf);
 
-  server.on("/get_depth_client", HTTP_GET, handleGetDepth);// to get depth from clent after calculation
+  server.on("/get_xyz_client", HTTP_GET, handleGetXYZclient);// to get depth from clent after calculation
    server.on("/get_depth_time_client", HTTP_GET, handleGetDepthTime);
 
   server.begin();

@@ -4,6 +4,7 @@
 #include "esp_camera.h"
 
 #include "esp_heap_caps.h"
+#include <ArduinoJson.h>
 
 // CAMERA MODEL
 #define CAMERA_MODEL_AI_THINKER
@@ -211,23 +212,26 @@ float computeDepth(int disparity, float focalLength, float baseline) {
 }
 
 void computeTopDepth() {
-  float focalLength = 50.0f;  // Adjusted due to 2x downscale
+  float focalLength = 211.0f;  
   float baseline = 10.0f;     // cm
   float cx = IMG_WIDTH / 2.0f;       // 160 / 2 = 80
   float cy = HALF_HEIGHT / 2.0f;     // 60 / 2 = 30
   int index = 0;
 
-  for (int y = 2; y < HALF_HEIGHT - 2; y++) {       // y = 2 to 27
+  for (int y = 3; y < HALF_HEIGHT - 3; y++) {       // y = 2 to 27
     //calculateRowSums(y);
 
-    for (int x = 2; x < IMG_WIDTH - 2; x++) {        // x = 2 to 77
-      int disp = findBestHorizontalPixalDisparityTop(x, y, 12, halfBlock);  // e.g. maxDisparity = 57   IMG_WIDTH - x - 2
+    for (int x = 3; x < IMG_WIDTH - 3; x++) {        // x = 2 to 77
+      int disp = findBestHorizontalPixalDisparityTop(x, y, 32, halfBlock);  // e.g. maxDisparity = 57   IMG_WIDTH - x - 2
       float depth = computeDepth(disp, focalLength, baseline);
 
       if (depth > 255.0f || disp == 0) depth = 255.0f;
 
       float worldX = (x - cx) * depth / focalLength;
       float worldY = (y - cy) * depth / focalLength;
+
+            worldX = constrain(worldX, -127.0f, 127.0f);
+            worldY = constrain(worldY, -127.0f, 127.0f);
 
       int scaledX = (int)(worldX + 127.5f);
       int scaledY = (int)(worldY + 127.5f);
@@ -277,28 +281,88 @@ void handleGetDepth() {
   unsigned long startTime = millis();
   computeTopDepth();
   lastDepthTime = millis() - startTime;
+  printXYZ();
 
-  String json = "{";
+  // String json = "{";
   
-  json += "\"X\":[";
-  for (int i = 0; i < HALF_HEIGHT * IMG_WIDTH; i++) {
-    json += worldXmap[i];
-    if (i < HALF_HEIGHT * IMG_WIDTH - 1) json += ",";
-  }
-  json += "],\"Y\":[";
-  for (int i = 0; i < HALF_HEIGHT * IMG_WIDTH; i++) {
-    json += worldYmap[i];
-    if (i < HALF_HEIGHT * IMG_WIDTH - 1) json += ",";
-  }
-  json += "],\"Z\":[";
-  for (int i = 0; i < HALF_HEIGHT * IMG_WIDTH; i++) {
-    json += String(worldZmap[i], 2);
-    if (i < HALF_HEIGHT * IMG_WIDTH - 1) json += ",";
-  }
-  json += "]}";
+  // json += "\"X\":[";
+  // for (int i = 0; i < HALF_HEIGHT * IMG_WIDTH; i++) {
+  //   json += worldXmap[i];
+  //   if (i < HALF_HEIGHT * IMG_WIDTH - 1) json += ",";
+  // }
+  // json += "],\"Y\":[";
+  // for (int i = 0; i < HALF_HEIGHT * IMG_WIDTH; i++) {
+  //   json += worldYmap[i];
+  //   if (i < HALF_HEIGHT * IMG_WIDTH - 1) json += ",";
+  // }
+  // json += "],\"Z\":[";
+  // for (int i = 0; i < HALF_HEIGHT * IMG_WIDTH; i++) {
+  //   json += String(worldZmap[i], 2);
+  //   if (i < HALF_HEIGHT * IMG_WIDTH - 1) json += ",";
+  // }
+  // json += "]}";
+  String json = "{\"status\":\"depth calculation started\"}";
 
   server.send(200, "application/json", json);
 
+}
+
+void handleGetXYZap() {
+    // calculate max size needed
+    size_t bufSize = HALF_HEIGHT * IMG_WIDTH * 12 * 3 + 256; // rough estimate
+    char* jsonBuf = (char*) heap_caps_malloc(bufSize, MALLOC_CAP_SPIRAM);
+    if (!jsonBuf) {
+        server.send(500, "text/plain", "Failed to allocate PSRAM");
+        return;
+    }
+    
+    char* ptr = jsonBuf;
+    ptr += sprintf(ptr, "{");
+
+    // X array
+    ptr += sprintf(ptr, "\"X\":[");
+    for (int i = 0; i < HALF_HEIGHT * IMG_WIDTH; i++) {
+        ptr += sprintf(ptr, "%d", (int)worldXmap[i]);
+        if (i < HALF_HEIGHT * IMG_WIDTH - 1) ptr += sprintf(ptr, ",");
+    }
+    ptr += sprintf(ptr, "],");
+
+    // Y array
+    ptr += sprintf(ptr, "\"Y\":[");
+    for (int i = 0; i < HALF_HEIGHT * IMG_WIDTH; i++) {
+        ptr += sprintf(ptr, "%d", (int)worldYmap[i]);
+        if (i < HALF_HEIGHT * IMG_WIDTH - 1) ptr += sprintf(ptr, ",");
+    }
+    ptr += sprintf(ptr, "],");
+
+    // Z array
+    ptr += sprintf(ptr, "\"Z\":[");
+    for (int i = 0; i < HALF_HEIGHT * IMG_WIDTH; i++) {
+        ptr += sprintf(ptr, "%.2f", worldZmap[i]);
+        if (i < HALF_HEIGHT * IMG_WIDTH - 1) ptr += sprintf(ptr, ",");
+    }
+    ptr += sprintf(ptr, "]}");
+
+    server.send(200, "application/json", jsonBuf);
+    free(jsonBuf); // free PSRAM
+}
+
+
+
+
+void printXYZ() {
+    int numElements = HALF_HEIGHT * IMG_WIDTH;
+
+    Serial.println("Printing X, Y, Z values:");
+    for (int i = 0; i < numElements; i++) {
+        Serial.print("X: ");
+        Serial.print(worldXmap[i]);
+        Serial.print(", Y: ");
+        Serial.print(worldYmap[i]);
+        Serial.print(", Z: ");
+        Serial.println(worldZmap[i]);
+    }
+    Serial.println("End of XYZ data.");
 }
 
 
@@ -314,7 +378,7 @@ void setup() {
 
   apBottomHalf     = (uint8_t*) heap_caps_malloc(IMG_WIDTH * HALF_HEIGHT, MALLOC_CAP_SPIRAM);
   clientTopHalf    = (uint8_t*) heap_caps_malloc(IMG_WIDTH * HALF_HEIGHT, MALLOC_CAP_SPIRAM);
-  apTopHalf = (uint8_t*) heap_caps_malloc(IMG_WIDTH * HALF_HEIGHT, MALLOC_CAP_SPIRAM);
+  apTopHalf        = (uint8_t*) heap_caps_malloc(IMG_WIDTH * HALF_HEIGHT, MALLOC_CAP_SPIRAM);
   sampledFrame     = (uint8_t*) heap_caps_malloc(IMG_WIDTH * IMG_HEIGHT, MALLOC_CAP_SPIRAM);
 
   worldXmap = (uint8_t*) heap_caps_malloc(IMG_WIDTH * HALF_HEIGHT, MALLOC_CAP_SPIRAM);
@@ -338,6 +402,7 @@ void setup() {
   Serial.println(WiFi.softAPIP());
 
   server.on("/get_depth", HTTP_GET, handleGetDepth);
+  server.on("/get_xyz_ap", HTTP_GET, handleGetXYZap);
   server.on("/get_depth_time_ap", HTTP_GET, handleGetDepthTime);
   server.begin();
   Serial.println("AP ready");
