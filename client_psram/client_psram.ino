@@ -39,7 +39,9 @@ float*   worldZmap;
 // uint8_t PSRAM_ATTR worldYmap[HALF_HEIGHT * IMG_WIDTH];
 // float   PSRAM_ATTR worldZmap[HALF_HEIGHT * IMG_WIDTH];
 
-unsigned long lastDepthTime = 0;
+unsigned long lastDepthTime = 0;// depth calculation time
+unsigned long fullTime =0;  // full time 
+unsigned long handlerStart = 0; //start of triger
 int halfBlock = 3; // 3-> 7x7, 2->5x5, 1->3x3
 
 WebServer server(80);
@@ -121,6 +123,8 @@ void captureAndSplit() {
 }
 
 void handleCapture() {
+  handlerStart = 0;
+  handlerStart = millis();
   captureAndSplit();
   server.send(200, "text/plain", "Client capture OK");
 }
@@ -142,9 +146,10 @@ void handleReceiveApBottomHalf() {
     
    // printApBottomTopHalf();
     //then go to calculation
-    unsigned long startTime = millis();
+    unsigned long depthStart = millis();
     computeBottomDepth();////////////////////////////
-    lastDepthTime = millis() - startTime;
+    lastDepthTime = millis() - depthStart;
+    fullTime = millis() - handlerStart;
 
     server.send(200, "text/plain", "Left depth sent");
   } else {
@@ -299,8 +304,13 @@ void computeBottomDepth() {
 
 
 void handleGetDepthTime() {
-  String json = "{\"elapsed_ms\":" + String(lastDepthTime) + "}";
-  server.send(200, "application/json", json);
+String json = "{";
+json += "\"depth_ms\":" + String(lastDepthTime);
+json += ",\"full_ms\":" + String(fullTime);
+json += "}";
+
+server.send(200, "application/json", json);
+
 }
 
 void setup() {

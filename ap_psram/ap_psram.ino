@@ -42,7 +42,8 @@ float*   worldZmap;
 // uint8_t PSRAM_ATTR worldYmap[HALF_HEIGHT * IMG_WIDTH];
 // float   PSRAM_ATTR worldZmap[HALF_HEIGHT * IMG_WIDTH];
 
-unsigned long lastDepthTime = 0;
+unsigned long lastDepthTime = 0;// depth calculation time
+unsigned long fullTime =0;  // full time 
 int halfBlock = 3; // 3-> 7x7, 2->5x5, 1->3x3
 
 WebServer server(80);
@@ -249,6 +250,9 @@ void computeTopDepth() {
 
 
 void handleGetDepth() {
+
+  unsigned long handlerStart = millis();
+
   Serial.println("Start depth flow...");
   captureAndSplit();
   // Trigger client capture
@@ -277,9 +281,10 @@ void handleGetDepth() {
   //printClientTopHalf();
   //calculate x, y, z values and store
 
-  unsigned long startTime = millis();
+  unsigned long depthStart  = millis();
   computeTopDepth();
-  lastDepthTime = millis() - startTime;
+  lastDepthTime = millis() - depthStart ;
+  fullTime = millis() - handlerStart;
   //printXYZ();
 
   // String json = "{";
@@ -367,8 +372,14 @@ void printXYZ() {
 
 
 void handleGetDepthTime() {
-  String json = "{\"elapsed_ms\":" + String(lastDepthTime) + "}";
-  server.send(200, "application/json", json);
+// JSON response
+String json = "{";
+json += "\"depth_ms\":" + String(lastDepthTime);
+json += ",\"full_ms\":" + String(fullTime);
+json += "}";
+
+server.send(200, "application/json", json);
+
 }
 
 
