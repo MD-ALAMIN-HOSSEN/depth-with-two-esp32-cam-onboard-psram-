@@ -222,7 +222,7 @@ void computeTopDepth() {
     //calculateRowSums(y);
 
     for (int x = 3; x < IMG_WIDTH - 3; x++) {        // x = 2 to 77
-      int disp = findBestHorizontalPixalDisparityTop(x, y, 32, halfBlock);  // e.g. maxDisparity = 57   IMG_WIDTH - x - 2
+      int disp = findBestHorizontalPixalDisparityTop(x, y, 80, halfBlock);  // e.g. maxDisparity = 57   IMG_WIDTH - x - 2
       float depth = computeDepth(disp, focalLength, baseline);
 
       if (depth > 255.0f || disp == 0) depth = 255.0f;
@@ -273,15 +273,14 @@ void handleGetDepth() {
   //get the right half
   //Fetch clientRightHalf from client
   fetchClientTopHalf();
-  //fetchClientRightHalf();
-  printClientTopHalf();
+
+  //printClientTopHalf();
   //calculate x, y, z values and store
-  ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-  //computeRightDepth();
+
   unsigned long startTime = millis();
   computeTopDepth();
   lastDepthTime = millis() - startTime;
-  printXYZ();
+  //printXYZ();
 
   // String json = "{";
   
@@ -308,8 +307,9 @@ void handleGetDepth() {
 }
 
 void handleGetXYZap() {
-    // calculate max size needed
-    size_t bufSize = HALF_HEIGHT * IMG_WIDTH * 12 * 3 + 256; // rough estimate
+    int numPoints = (HALF_HEIGHT - 6) * (IMG_WIDTH - 6); // 8316 for 160x120
+
+    size_t bufSize = numPoints * 12 * 3 + 256; 
     char* jsonBuf = (char*) heap_caps_malloc(bufSize, MALLOC_CAP_SPIRAM);
     if (!jsonBuf) {
         server.send(500, "text/plain", "Failed to allocate PSRAM");
@@ -321,25 +321,25 @@ void handleGetXYZap() {
 
     // X array
     ptr += sprintf(ptr, "\"X\":[");
-    for (int i = 0; i < HALF_HEIGHT * IMG_WIDTH; i++) {
+    for (int i = 0; i < numPoints; i++) {
         ptr += sprintf(ptr, "%d", (int)worldXmap[i]);
-        if (i < HALF_HEIGHT * IMG_WIDTH - 1) ptr += sprintf(ptr, ",");
+        if (i < numPoints - 1) ptr += sprintf(ptr, ",");
     }
     ptr += sprintf(ptr, "],");
 
     // Y array
     ptr += sprintf(ptr, "\"Y\":[");
-    for (int i = 0; i < HALF_HEIGHT * IMG_WIDTH; i++) {
+    for (int i = 0; i < numPoints; i++) {
         ptr += sprintf(ptr, "%d", (int)worldYmap[i]);
-        if (i < HALF_HEIGHT * IMG_WIDTH - 1) ptr += sprintf(ptr, ",");
+        if (i < numPoints - 1) ptr += sprintf(ptr, ",");
     }
     ptr += sprintf(ptr, "],");
 
     // Z array
     ptr += sprintf(ptr, "\"Z\":[");
-    for (int i = 0; i < HALF_HEIGHT * IMG_WIDTH; i++) {
-        ptr += sprintf(ptr, "%.2f", worldZmap[i]);
-        if (i < HALF_HEIGHT * IMG_WIDTH - 1) ptr += sprintf(ptr, ",");
+    for (int i = 0; i < numPoints; i++) {
+        ptr += sprintf(ptr, "%.2f", (double)worldZmap[i]);
+        if (i < numPoints - 1) ptr += sprintf(ptr, ",");
     }
     ptr += sprintf(ptr, "]}");
 
@@ -351,7 +351,7 @@ void handleGetXYZap() {
 
 
 void printXYZ() {
-    int numElements = HALF_HEIGHT * IMG_WIDTH;
+    int numElements = (HALF_HEIGHT - 6) * (IMG_WIDTH - 6); // 8316 for 160x120
 
     Serial.println("Printing X, Y, Z values:");
     for (int i = 0; i < numElements; i++) {
@@ -381,9 +381,10 @@ void setup() {
   apTopHalf        = (uint8_t*) heap_caps_malloc(IMG_WIDTH * HALF_HEIGHT, MALLOC_CAP_SPIRAM);
   sampledFrame     = (uint8_t*) heap_caps_malloc(IMG_WIDTH * IMG_HEIGHT, MALLOC_CAP_SPIRAM);
 
-  worldXmap = (uint8_t*) heap_caps_malloc(IMG_WIDTH * HALF_HEIGHT, MALLOC_CAP_SPIRAM);
-  worldYmap = (uint8_t*) heap_caps_malloc(IMG_WIDTH * HALF_HEIGHT, MALLOC_CAP_SPIRAM);
-  worldZmap = (float*)   heap_caps_malloc(IMG_WIDTH * HALF_HEIGHT * sizeof(float), MALLOC_CAP_SPIRAM);
+  int numPoints = (HALF_HEIGHT - 6) * (IMG_WIDTH - 6); // 8316
+  worldXmap = (uint8_t*) heap_caps_malloc(numPoints, MALLOC_CAP_SPIRAM);
+  worldYmap = (uint8_t*) heap_caps_malloc(numPoints, MALLOC_CAP_SPIRAM);
+  worldZmap = (float*)   heap_caps_malloc(numPoints * sizeof(float), MALLOC_CAP_SPIRAM);
 
   if(!apBottomHalf || !clientTopHalf || !apTopHalf || !sampledFrame ||
      !worldXmap || !worldYmap || !worldZmap) {
