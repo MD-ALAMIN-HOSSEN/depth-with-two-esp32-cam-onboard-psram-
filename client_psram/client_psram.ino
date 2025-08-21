@@ -21,6 +21,11 @@ const char* ssid = "ESP32-CAM-AP";
 const char* password = "12345678";
 IPAddress apIP(192,168,4,1);
 
+
+uint8_t* clientFrame = nullptr;      // PSRAM buffer for client frame
+size_t clientFrameSize = 0;          // Size in bytes
+
+
 uint8_t* apBottomHalf;
 uint8_t* clientTopHalf;
 uint8_t* clientBottomHalf;
@@ -113,6 +118,12 @@ void captureAndSplit() {
     Serial.println("Capture failed");
     return;
   }
+
+   if (clientFrame) {
+    memcpy(clientFrame, fb->buf, IMG_WIDTH * IMG_HEIGHT);
+    clientFrameSize = IMG_WIDTH * IMG_HEIGHT;
+   }
+
   gaussianBlurSameSize(fb->buf, sampledFrame);/////////////
   esp_camera_fb_return(fb);
 
@@ -313,6 +324,25 @@ server.send(200, "application/json", json);
 
 }
 
+void handleClientPicturePGM() {
+  if (!clientFrame || clientFrameSize == 0) {
+    server.send(500, "text/plain", "No PGM frame available");
+    return;
+  }
+
+  WiFiClient client = server.client();
+
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-Type: application/octet-stream");
+  client.println("Content-Disposition: attachment; filename=\"client_frame.pgm\"");
+  client.println("Connection: close");
+  client.println();
+
+  client.printf("P5\n%d %d\n255\n", IMG_WIDTH, IMG_HEIGHT);
+  client.write(clientFrame, clientFrameSize);
+}
+
+
 void setup() {
   Serial.begin(115200);
 
@@ -320,6 +350,9 @@ void setup() {
   clientTopHalf    = (uint8_t*) heap_caps_malloc(IMG_WIDTH * HALF_HEIGHT, MALLOC_CAP_SPIRAM);
   clientBottomHalf = (uint8_t*) heap_caps_malloc(IMG_WIDTH * HALF_HEIGHT, MALLOC_CAP_SPIRAM);
   sampledFrame     = (uint8_t*) heap_caps_malloc(IMG_WIDTH * IMG_HEIGHT, MALLOC_CAP_SPIRAM);
+  
+  // Allocate buffer for one full grayscale frame in PSRAM
+  clientFrame = (uint8_t*) ps_malloc(IMG_WIDTH * IMG_HEIGHT);
 
   int numPoints = (HALF_HEIGHT - 6) * (IMG_WIDTH - 6); // 8316
   worldXmap = (uint8_t*) heap_caps_malloc(numPoints, MALLOC_CAP_SPIRAM);
@@ -359,6 +392,9 @@ void setup() {
   }
 
   // Setup web routes
+  server.on("/client_picture_pgm", handleClientPicturePGM);
+
+
   server.on("/capture", HTTP_GET, handleCapture);
   server.on("/receive_bottom_half", HTTP_POST, handleReceiveApBottomHalf);
   server.on("/send_client_top_half", HTTP_GET, handleSendClientTopHalf);

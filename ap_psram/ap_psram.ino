@@ -22,7 +22,8 @@ const char* ssid = "ESP32-CAM-AP";
 const char* password = "12345678";
 IPAddress clientIP(192,168,4,2);
 
-
+uint8_t* pgmFrame   = nullptr;   // will hold the grayscale frame
+size_t pgmFrameSize = 0;
 // Store in PSRAM
 uint8_t* apBottomHalf;
 uint8_t* clientTopHalf;
@@ -160,6 +161,13 @@ void captureAndSplit() {
     Serial.println("Capture failed");
     return;
   }
+
+    // Save full grayscale frame into PSRAM buffer
+    if (pgmFrame) {
+    memcpy(pgmFrame, fb->buf, IMG_WIDTH * IMG_HEIGHT);
+    pgmFrameSize = IMG_WIDTH * IMG_HEIGHT;
+   }
+
   gaussianBlurSameSize(fb->buf, sampledFrame);  //downsampledFrame
   esp_camera_fb_return(fb);
 
@@ -382,6 +390,29 @@ server.send(200, "application/json", json);
 
 }
 
+// --- Serve the captured frame as a PGM file ---
+void handleApPicturePGM() {
+  if (!pgmFrame || pgmFrameSize == 0) {
+    server.send(500, "text/plain", "No PGM frame available");
+    return;
+  }
+
+  WiFiClient client = server.client();
+
+  // HTTP headers → force download as frame.pgm
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-Type: application/octet-stream");
+  client.println("Content-Disposition: attachment; filename=\"ap_frame.pgm\"");
+  client.println("Connection: close");
+  client.println();
+
+  // PGM header (P5 = binary grayscale)
+  client.printf("P5\n%d %d\n255\n", IMG_WIDTH, IMG_HEIGHT);
+
+  // Raw grayscale pixel data
+  client.write(pgmFrame, pgmFrameSize);
+}
+
 
 void setup() {
   Serial.begin(115200);
@@ -391,6 +422,9 @@ void setup() {
   clientTopHalf    = (uint8_t*) heap_caps_malloc(IMG_WIDTH * HALF_HEIGHT, MALLOC_CAP_SPIRAM);
   apTopHalf        = (uint8_t*) heap_caps_malloc(IMG_WIDTH * HALF_HEIGHT, MALLOC_CAP_SPIRAM);
   sampledFrame     = (uint8_t*) heap_caps_malloc(IMG_WIDTH * IMG_HEIGHT, MALLOC_CAP_SPIRAM);
+
+    // Allocate buffer for one full grayscale frame in PSRAM
+  pgmFrame = (uint8_t*)ps_malloc(IMG_WIDTH * IMG_HEIGHT);
 
   int numPoints = (HALF_HEIGHT - 6) * (IMG_WIDTH - 6); // 8316
   worldXmap = (uint8_t*) heap_caps_malloc(numPoints, MALLOC_CAP_SPIRAM);
@@ -412,6 +446,8 @@ void setup() {
   setupCamera();
   WiFi.softAP(ssid, password);
   Serial.println(WiFi.softAPIP());
+
+  server.on("/ap_picture_pgm", handleApPicturePGM);
 
   server.on("/get_depth", HTTP_GET, handleGetDepth);
   server.on("/get_xyz_ap", HTTP_GET, handleGetXYZap);
