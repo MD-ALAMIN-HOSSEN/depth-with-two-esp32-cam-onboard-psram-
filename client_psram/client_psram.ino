@@ -47,7 +47,7 @@ float*   worldZmap;
 unsigned long lastDepthTime = 0;// depth calculation time
 unsigned long fullTime =0;  // full time 
 unsigned long handlerStart = 0; //start of triger
-int halfBlock = 3; // 3-> 7x7, 2->5x5, 1->3x3
+int halfBlock = 4; // 3-> 7x7, 2->5x5, 1->3x3 4->9x9
 
 WebServer server(80);
 
